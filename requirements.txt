@@ -1,0 +1,29 @@
+# streamlit #web UI
+# matplotlib
+# networkx # Graph visualization
+# bs4 # Web scraping
+# langchain # Language model utilities
+# langchain_community==0.3.21 # Community-contributed tools for LangChain
+# llama-index # Indexing and querying documents
+# # langchain-ollama # Ollama integration for LLMs
+# # langchain-chromadb # ChromaDB integration for LangChain
+# langchain_ollama
+# langchain_chroma
+# requests # HTTP requests
+# llama_index.llms.ollama
+
+
+
+
+pypdf==5.4.0
+langchain_community==0.3.21
+beautifulsoup4==4.13.3
+llama_index.llms.ollama
+langchain_ollama
+langchain_chroma
+matplotlib
+pygraphviz
+streamlit #web UI
+streamlit_agraph #Graph Framework
+plotly
+pymongo #Database communication framework
