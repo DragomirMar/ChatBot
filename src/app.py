@@ -2,6 +2,7 @@ import streamlit as st
 from extract_text import *
 from llm import OllamaModel
 from vector_database import VectorDatabase
+from knowledge_graph_retriever import KnowledgeGraphRetriever
 import logging
 from logger_config import setup_logging
 
@@ -9,6 +10,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 db = VectorDatabase()
+kg_retriever = KnowledgeGraphRetriever()
 
 def ask(prompt):
     llm = OllamaModel()
@@ -23,6 +25,12 @@ def show_sources():
     st.write("Sources in the database:")
     for source in sources:
         st.write(f"- {source}")
+    
+    # Also show KG stats
+    kg_stats = kg_retriever.get_kg_stats()
+    st.write("\nKnowledge Graph Statistics:")
+    st.write(f"- Entities: {kg_stats.get('total_entities', 0)}")
+    st.write(f"- Relationships: {kg_stats.get('total_relationships', 0)}")
 
 def process_url(url):
     st.write(f"Processing URL: {url}")
@@ -33,7 +41,6 @@ def process_url(url):
             st.error("Failed to extract content from URL. Please check if the URL is valid and accessible.")
             return
         
-        # Add chunks to database (no need to pass source again as it's already in metadata)
         db.add_document_chunks(chunks)
         
         st.success(f"Successfully added {len(chunks)} chunks from URL to database")
@@ -53,10 +60,10 @@ def process_pdf(uploaded_files):
 
 # Title
 st.set_page_config(
-    page_title="RAG ChatBot",
+    page_title="RAG ChatBot with Knowledge Graph",
     layout="wide")
 
-st.title('Upload Documents to RAG ChatBot')
+st.title('Upload Documents to RAG ChatBot with Knowledge Graph 🧠')
 
 col1, col2 = st.columns(2)
 
@@ -91,6 +98,7 @@ with col2:
             st.warning("Please enter a valid URL.")
 
 st.markdown("---")
+
 # Buttons for database operations
 col1, col2 = st.columns([1,1]) 
 with col1:
@@ -100,6 +108,15 @@ with col1:
 with col2:
     if st.button("Clear Database"):
         clear_database()
+
+# Knowledge Graph Settings (collapsible)
+with st.expander("⚙️ Knowledge Graph Settings"):
+    use_kg = st.checkbox("Enable Knowledge Graph Enhancement", value=True, 
+                         help="Use knowledge graph to enhance answers with entity information")
+    max_hops = st.slider("Relationship Hops", min_value=1, max_value=2, value=1,
+                         help="Number of relationship connections to traverse (1=direct, 2=friends-of-friends)")
+    max_entities = st.slider("Max Entities", min_value=1, max_value=10, value=5,
+                             help="Maximum number of entities to retrieve from query")
             
         
 # Chat Bot
@@ -127,25 +144,49 @@ if user_input:
     
     # Response
     with st.spinner("KG Bot is thinking..."):
-        # Search vector DB
+        # 1. Search vector DB for document chunks
         relevant_chunks = db.similarity_search(user_input, k=5)
-        print(f"Relevant chunks: {relevant_chunks}")
-        logger.info(f"Found {len(relevant_chunks)} relevant chunks")
+        logger.info(f"Found {len(relevant_chunks)} relevant chunks from vector DB")
         
-        # Extract page_content from each chunk and join them
+        # Extract page_content from chunks
         if relevant_chunks:
-            context = "\n".join([chunk.page_content for chunk in relevant_chunks])
+            doc_context = "\n".join([chunk.page_content for chunk in relevant_chunks])
         else:
-            context = "No relevant context found."
+            doc_context = ""
+        
+        # 2. Retrieve knowledge graph context (if enabled)
+        kg_context = ""
+        if use_kg:
+            kg_context = kg_retriever.retrieve_kg_context(
+                user_input, 
+                max_entities=max_entities, 
+                max_hops=max_hops
+            )
+        
+        # 3. Combine contexts
+        combined_context = ""
+        
+        if doc_context:
+            combined_context += "**Document Context:**\n" + doc_context + "\n\n"
+        
+        if kg_context:
+            combined_context += "**Knowledge Graph Context:**\n" + kg_context + "\n\n"
+        
+        if not combined_context:
+            combined_context = "No relevant context found."
+        
+        # 4. Create enriched prompt
+        enriched_prompt = f"""You are a helpful assistant. Use the following context to answer the user's question accurately.
 
-        # Add context to user query
-        enriched_prompt = f"""
-            You are a helpful assistant. Use the following context to help answer the user's question.
-            Only use the context if it is relevant.
-            Summarize your answer in no more than 3 sentences.
+            The context includes:
+            1. Document Context: Relevant excerpts from uploaded documents
+            2. Knowledge Graph Context: Structured information about entities and their relationships
+
+            Use both sources to provide a comprehensive answer. Prioritize factual information from the knowledge graph when available.
+            Keep your answer concise (no more than 3-4 sentences) but informative.
 
             Context:
-            {context}
+            {combined_context}
 
             User Question:
             {user_input}
@@ -154,6 +195,16 @@ if user_input:
 
         response_text = ask(enriched_prompt)
 
-    response = f"{response_text}"
+    # Display response with indicator if KG was used
+    kg_indicator = " 🧠" if kg_context else ""
+    response = f"{response_text}{kg_indicator}"
     st.chat_message("assistant").markdown(response)
     st.session_state.messages.append({"role": "assistant", "content": response})
+    
+    # Optional: Show what was retrieved (for debugging/transparency)
+    if kg_context:
+        with st.expander("🔍 View Retrieved Knowledge"):
+            st.markdown("**From Documents:**")
+            st.text(doc_context[:500] + "..." if len(doc_context) > 500 else doc_context)
+            st.markdown("**From Knowledge Graph:**")
+            st.markdown(kg_context)

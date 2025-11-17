@@ -4,7 +4,7 @@ class OllamaModel:
     def __init__(self):
         self.llm = Ollama(
             model="llama3.1:8b",
-            request_timeout=120.0,
+            request_timeout=300.0,
             temperature=0.7,
             additional_kwargs={
                 "num_ctx": 2048  # or 4096
