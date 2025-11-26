@@ -1,7 +1,8 @@
 from pymongo import MongoClient
-from typing import List, Dict, Set, Tuple
+from typing import List, Dict, Tuple
 import logging
 from entity_extractor import EntityExtractor
+from rapidfuzz import process, fuzz
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,23 @@ class KnowledgeGraphRetriever:
         
         # Create indexes for faster queries
         self._create_indexes()
+        
+         # Load all entity names for fuzzy matching
+        self._all_entity_names = self._load_all_entity_names()
+    
+    def _load_all_entity_names(self) -> List[str]:
+        """
+        Load all entity names from MongoDB into memory.
+        This allows to compare query entities against all KG entities.
+        """
+        try:
+            all_entities = self.entities_collection.find({}, {"name": 1})
+            entity_names = [e["name"] for e in all_entities]
+            logger.info(f"Loaded {len(entity_names)} entity names from database")
+            return entity_names
+        except Exception as e:
+            logger.error(f"Error loading entity names: {e}")
+            return []
     
     def _create_indexes(self):
         """Create indexes on frequently queried fields"""
@@ -33,16 +51,24 @@ class KnowledgeGraphRetriever:
     
     def extract_potential_entities(self, text: str) -> List[str]:
         """
-        Extract potential entity names from text.
-        Simple approach: capitalized words and phrases.
-        You can enhance this with NER later.
+        Extract potential entity names from users query. These will be used to find relevant entities
+        in the knowledge graph.
         """
         extractor = EntityExtractor()
         potential_entities = extractor.extract_entities(
             text, min_token_len=2, include_singles=True, use_simple_fallback=True
         )
         return potential_entities
-        
+    
+    def fuzzy_match_entities(self, entity_name: str, names_list: List[str], threshold: int = 60, limit: int = 5) -> List[Tuple[str, float]]:
+        matches = process.extract(
+            entity_name,
+            names_list,
+            scorer=fuzz.WRatio,
+            score_cutoff=threshold,
+            limit=limit
+        )
+        return [(match[0], match[1]) for match in matches]   
     
     def get_entity_info(self, entity_name: str) -> Dict:
         """
@@ -64,7 +90,7 @@ class KnowledgeGraphRetriever:
         
         Args:
             entity_name: Name of the entity
-            max_hops: Number of relationship hops to traverse (1 or 2 recommended)
+            max_hops: Number of relationship hops to traverse 
         
         Returns:
             List of relationship dictionaries
@@ -107,7 +133,13 @@ class KnowledgeGraphRetriever:
             logger.error(f"Error retrieving relationships for {entity_name}: {e}")
             return []
     
-    def retrieve_kg_context(self, query: str, max_entities: int = 5, max_hops: int = 1) -> str:
+    def retrieve_kg_context(self,
+                            query: str,
+                            max_entities: int = 5,
+                            max_hops: int = 1,
+                            fuzzy_threshold: int = 70,       
+                            fuzzy_matches_per_entity: int = 5  
+                            ) -> str:
         """
         Main method to retrieve knowledge graph context for a query.
         
@@ -119,42 +151,72 @@ class KnowledgeGraphRetriever:
         Returns:
             Formatted string with entity descriptions and relationships
         """
-        # Extract potential entities from query
+        
+        # 1. Extract potential entities from user's query
         potential_entities = self.extract_potential_entities(query)
         
-        if not potential_entities:
+        # Log extracted entities
+        if potential_entities:
+            logger.info(f"Found potential entities: {potential_entities}")
+        else:
             logger.info("No potential entities found in query")
             return ""
         
-        logger.info(f"Found potential entities: {potential_entities}")
-        
-        # Retrieve entity information and relationships
+        # Context helpers
         kg_context_parts = []
         entities_found = 0
-        
+        processed_entities = set()  
+    
+        # 2. Retrieve entities, description and relationships
         for entity_name in potential_entities[:max_entities]:
-            # Get entity description
-            entity_info = self.get_entity_info(entity_name)
             
-            if entity_info:
-                entities_found += 1
-                kg_context_parts.append(f"\n**Entity: {entity_info['name']}**")
-                kg_context_parts.append(f"Description: {entity_info['description']}")
+            # 2.1 Fuzzy match potential entity's name against KG entities
+            fuzzy_matches = self.fuzzy_match_entities(
+                entity_name, 
+                self._all_entity_names, 
+                threshold=fuzzy_threshold,
+                limit=fuzzy_matches_per_entity 
+            )
+            
+            if fuzzy_matches:
+                logger.info(
+                    f"Fuzzy matches for '{entity_name}': "
+                    f"{[(name, f'{score:.1f}') for name, score in fuzzy_matches]}"
+                )
+            else:
+                logger.info(f"No fuzzy matches found for '{entity_name}'")
+            
+            for matched_entity, confidence_score in fuzzy_matches:    
+                 # Skip if already processed 
+                if matched_entity in processed_entities:
+                    continue
                 
-                # Get relationships
-                relationships = self.get_relationships_for_entity(entity_name, max_hops)
+                processed_entities.add(matched_entity)  
+            
+                # 2.2 Get entity description
+                entity_info = self.get_entity_info(matched_entity)
                 
-                if relationships:
-                    kg_context_parts.append("Relationships:")
-                    # Deduplicate relationships
-                    seen = set()
-                    for rel in relationships:
-                        rel_tuple = (rel['subject'], rel['predicate'], rel['object'])
-                        if rel_tuple not in seen:
-                            seen.add(rel_tuple)
-                            kg_context_parts.append(
-                                f"  - {rel['subject']} {rel['predicate']} {rel['object']}"
-                            )
+                if entity_info:
+                    entities_found += 1
+                    kg_context_parts.append(f"\n**Entity: {entity_info['name']}**"
+                                            f"(matched '{entity_name}' with {confidence_score:.1f}% confidence)"
+                                            )
+                    kg_context_parts.append(f"Description: {entity_info['description']}")
+                    
+                    # 2.3 Get relationships
+                    relationships = self.get_relationships_for_entity(entity_info['name'], max_hops)
+                    
+                    if relationships:
+                        kg_context_parts.append("Relationships:")
+                        # Deduplicate relationships
+                        seen = set()
+                        for rel in relationships:
+                            rel_tuple = (rel['subject'], rel['predicate'], rel['object'])
+                            if rel_tuple not in seen:
+                                seen.add(rel_tuple)
+                                kg_context_parts.append(
+                                    f"  - {rel['subject']} {rel['predicate']} {rel['object']}"
+                                )
         
         if entities_found == 0:
             logger.info("No matching entities found in knowledge graph")
@@ -162,6 +224,7 @@ class KnowledgeGraphRetriever:
         
         logger.info(f"Retrieved context for {entities_found} entities from knowledge graph")
         return "\n".join(kg_context_parts)
+    
     
     def get_kg_stats(self) -> Dict:
         """Get statistics about the knowledge graph"""
