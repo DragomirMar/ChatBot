@@ -1,7 +1,7 @@
 from pymongo import MongoClient
 from typing import List, Dict, Tuple
 import logging
-from entity_extractor import EntityExtractor
+from entity_extractor import extract_entities
 from rapidfuzz import process, fuzz
 
 logger = logging.getLogger(__name__)
@@ -18,8 +18,6 @@ class KnowledgeGraphRetriever:
         self.db = self.client["knowledge_graph"]
         self.entities_collection = self.db["entities"]
         self.relationships_collection = self.db["relationships"]
-        
-        self.extractor = EntityExtractor()
 
         self._create_indexes()
         self._all_entity_names = self._load_all_entity_names()
@@ -48,7 +46,7 @@ class KnowledgeGraphRetriever:
     
     def extract_potential_entities(self, text: str) -> List[str]:
         """Extract potential entities from text using EntityExtractor."""
-        return self.extractor.extract_entities(text)
+        return extract_entities(text)
     
     def fuzzy_match_entities(self, entity_name: str, names_list: List[str]) -> List[Tuple[str, float]]:
         """ Fuzzy match extracted entity name against list of knowledge graph entity names. """

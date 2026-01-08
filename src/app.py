@@ -1,33 +1,36 @@
 import streamlit as st
+import logging
+from logger_config import setup_logging
 from text_extractor import *
 from llm import OllamaModel
 from vector_database import VectorDatabase
 from knowledge_graph_retriever import KnowledgeGraphRetriever
 
-import logging
-from logger_config import setup_logging
-
-# Logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
-#Variables
 db = VectorDatabase()
 kg_retriever = KnowledgeGraphRetriever()
 llm = OllamaModel()
 
-#Methods 
+
+# --------------------------------
+# Helper Functions
+# --------------------------------
+
 def show_sources():
+    """Display sources and KG stats."""
     sources = db.get_sources()
     st.write("Sources in the database:")
     for source in sources:
         st.write(f"- {source}")
     
-    # Also show KG stats
+    # KG stats
     kg_stats = kg_retriever.get_kg_stats()
     st.write("\nKnowledge Graph Statistics:")
     st.write(f"- Entities: {kg_stats.get('total_entities', 0)}")
     st.write(f"- Relationships: {kg_stats.get('total_relationships', 0)}")
+
 
 def process_url(url):
     st.write(f"Processing URL: {url}")
@@ -47,6 +50,7 @@ def process_url(url):
         st.error(f"Error processing URL: {str(e)}")
         logger.error(f"Error processing URL {url}: {str(e)}")
 
+
 def process_pdf(uploaded_files):
     st.write("Saving files to DB...")
     
@@ -55,7 +59,74 @@ def process_pdf(uploaded_files):
         db.add_document_chunks(chunks, file.name)
     logger.info("Documents added successfully")
 
-### Main ### 
+
+def generate_enriched_prompt(user_input: str, use_kg: bool) -> str:
+    """Combine document and KG context to create enriched prompt."""
+    # 1. Search vector DB for document chunks
+    relevant_chunks = db.similarity_search(user_input, k=5)
+    logger.info(f"Found {len(relevant_chunks)} relevant chunks from vector DB")
+        
+    # 1.1 Extract content and combine chunks
+    doc_context = "\n".join([c.page_content for c in relevant_chunks]) if relevant_chunks else ""
+
+    # 2. Retrieve knowledge graph context (if enabled)
+    kg_context = kg_retriever.retrieve_kg_context(user_input) if use_kg else ""
+
+    # 3. Combine contexts
+    combined_context = ""
+    if doc_context:
+        combined_context += f"**Document Context:**\n{doc_context}\n\n"
+    if kg_context:
+        combined_context += f"**Knowledge Graph Context:**\n{kg_context}\n\n"
+    if not combined_context:
+        combined_context = "No relevant context found."
+
+    # 4. Create enriched prompt
+    enriched_prompt = f"""You are a helpful assistant. Use the following context to answer the user's question accurately.
+
+            The context includes:
+            1. Document Context: Relevant excerpts from uploaded documents
+            2. Knowledge Graph Context: Structured information about entities and their relationships
+
+            Use both sources to provide a comprehensive answer. Prioritize factual information from the knowledge graph when available.
+            Keep your answer concise (no more than 3-4 sentences) but informative.
+
+            Context:
+            {combined_context}
+
+            User Question:
+            {user_input}
+
+            Answer:"""
+    return enriched_prompt, kg_context, doc_context
+
+
+def respond_to_user(user_input: str, use_kg: bool):
+    """Generate LLM response and update session state."""
+    prompt, kg_context, doc_context = generate_enriched_prompt(user_input, use_kg)
+    response_text = llm.inference(prompt)
+    
+    # Display an indicator if KG was used
+    kg_indicator = " 🧠" if kg_context else ""
+    response = f"{response_text}{kg_indicator}"
+
+    # Display llm's message
+    st.chat_message("assistant").markdown(response)
+    # Store the message in Streamlit session history
+    st.session_state.messages.append({"role": "assistant", "content": response})
+
+    # Optional: Show retrieved context
+    if kg_context:
+        st.session_state.last_kg_context = kg_context
+        with st.expander("🔍 View Retrieved Knowledge"):
+            st.markdown("**From Documents:**")
+            st.text(doc_context[:500] + "..." if len(doc_context) > 500 else doc_context)
+            st.markdown("**From Knowledge Graph:**")
+            st.markdown(kg_context)
+            
+# --------------------------------
+# Streamlit UI
+# --------------------------------
 
 # Title
 st.set_page_config(
@@ -98,7 +169,7 @@ with col2:
 
 st.markdown("---")
 
-# Buttons for database operations
+# Database Operations
 col1, col2 = st.columns([1,1]) 
 with col1:
     if st.button("Show Sources"):
@@ -117,91 +188,25 @@ with st.expander("⚙️ Knowledge Graph Settings"):
         
 ### Chat Bot ###
 st.title('Chat Bot 🤖')
-
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+    
 if st.button("Clear Chat 🧹", help="Clear chat"):
     st.session_state.messages = []
     st.rerun()
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
 
 # Display chat history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# Input field (pinned to bottom automatically)
+# Input field, pinned to bottom
 user_input = st.chat_input("Type your message...")
-
 if user_input:
     # Show user's message
     st.chat_message("user").markdown(user_input)
     st.session_state.messages.append({"role": "user", "content": user_input})
     
-    # Response and RAG logic
+    # Respond
     with st.spinner("KG Bot is thinking..."):
-        # 1. Search vector DB for document chunks
-        relevant_chunks = db.similarity_search(user_input, k=5)
-        
-        logger.info(f"Found {len(relevant_chunks)} relevant chunks from vector DB")
-        
-        # 1.1 Extract content and combine chunks
-        if relevant_chunks:
-            doc_context = "\n".join([chunk.page_content for chunk in relevant_chunks])
-        else:
-            doc_context = ""
-        
-        # 2. Retrieve knowledge graph context (if enabled)
-        kg_context = ""
-        if use_kg:
-            kg_context = kg_retriever.retrieve_kg_context(user_input)
-        
-        # 3. Combine contexts
-        combined_context = ""
-        
-        if doc_context:
-            combined_context += "**Document Context:**\n" + doc_context + "\n\n"
-        
-        if kg_context:
-            combined_context += "**Knowledge Graph Context:**\n" + kg_context + "\n\n"
-        
-        if not combined_context:
-            combined_context = "No relevant context found."
-        
-        # 4. Create enriched prompt
-        enriched_prompt = f"""You are a helpful assistant. Use the following context to answer the user's question accurately.
-
-            The context includes:
-            1. Document Context: Relevant excerpts from uploaded documents
-            2. Knowledge Graph Context: Structured information about entities and their relationships
-
-            Use both sources to provide a comprehensive answer. Prioritize factual information from the knowledge graph when available.
-            Keep your answer concise (no more than 3-4 sentences) but informative.
-
-            Context:
-            {combined_context}
-
-            User Question:
-            {user_input}
-
-            Answer:"""
-
-        response_text = llm.inference(enriched_prompt)    
-
-    # Display an indicator if KG was used
-    kg_indicator = " 🧠" if kg_context else ""
-    response = f"{response_text}{kg_indicator}"
-    
-    #Display llm's message
-    st.chat_message("assistant").markdown(response)
-    # Store the message in Streamlit session history
-    st.session_state.messages.append({"role": "assistant", "content": response})
-    
-    # Optional: Show what was retrieved (for debugging/transparency)
-    if kg_context:
-        st.session_state.last_kg_context = kg_context
-        with st.expander("🔍 View Retrieved Knowledge"):
-            st.markdown("**From Documents:**")
-            st.text(doc_context[:500] + "..." if len(doc_context) > 500 else doc_context)
-            st.markdown("**From Knowledge Graph:**")
-            st.markdown(kg_context)
+        respond_to_user(user_input, use_kg)
