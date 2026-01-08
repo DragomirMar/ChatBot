@@ -19,8 +19,7 @@ class VectorDatabase:
             embedding_function=embeddings,   
             persist_directory=persist_directory 
         )
-        
-        
+
     def delete_by_source(self, source: str) -> bool:
         try:
             # Get all documents with the specified source
@@ -120,8 +119,6 @@ class VectorDatabase:
             raise
     
     def similarity_search(self, query: str, k: int = 5) -> List[str]:
-        # results = self.vector_store.similarity_search(query, k=k)
-        # return [doc.page_content for doc in results]
         try:
             results = self.vector_store.similarity_search(query, k=k)
             return results

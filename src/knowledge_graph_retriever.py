@@ -7,10 +7,11 @@ from rapidfuzz import process, fuzz
 logger = logging.getLogger(__name__)
 
 class KnowledgeGraphRetriever:
-    """
-    Retrieves relevant entities and relationships from MongoDB knowledge graph
-    to enhance RAG-based question answering.
-    """
+    """ Retrieves relevant entities and relationships from MongoDB knowledge graph. """
+    
+    DEFAULT_FUZZY_THRESHOLD = 70
+    DEFAULT_MAX_FUZZY_MATCHES_PER_ENTITY = 5    
+    DEFAULT_MAX_MATCHES_PER_ENTITY = 3
     
     def __init__(self, mongo_uri: str = "mongodb://localhost:27017/"):
         self.client = MongoClient(mongo_uri)
@@ -18,17 +19,13 @@ class KnowledgeGraphRetriever:
         self.entities_collection = self.db["entities"]
         self.relationships_collection = self.db["relationships"]
         
-        # Create indexes for faster queries
+        self.extractor = EntityExtractor()
+
         self._create_indexes()
-        
-         # Load all entity names for fuzzy matching
         self._all_entity_names = self._load_all_entity_names()
     
     def _load_all_entity_names(self) -> List[str]:
-        """
-        Load all entity names from MongoDB into memory.
-        This allows to compare query entities against all KG entities.
-        """
+        """ Load all entity names from MongoDB into memory, for fuzzy matching. """
         try:
             all_entities = self.entities_collection.find({}, {"name": 1})
             entity_names = [e["name"] for e in all_entities]
@@ -39,7 +36,7 @@ class KnowledgeGraphRetriever:
             return []
     
     def _create_indexes(self):
-        """Create indexes on frequently queried fields"""
+        """Create indexes on frequently queried fields for faster queries"""
         try:
             self.entities_collection.create_index("name")
             self.relationships_collection.create_index("subject")
@@ -50,31 +47,44 @@ class KnowledgeGraphRetriever:
             logger.warning(f"Error creating indexes: {e}")
     
     def extract_potential_entities(self, text: str) -> List[str]:
-        """
-        Extract potential entity names from users query. These will be used to find relevant entities
-        in the knowledge graph.
-        """
-        extractor = EntityExtractor()
-        potential_entities = extractor.extract_entities(
-            text, min_token_len=2, include_singles=True, use_simple_fallback=True
-        )
-        return potential_entities
+        """Extract potential entities from text using EntityExtractor."""
+        return self.extractor.extract_entities(text)
     
-    def fuzzy_match_entities(self, entity_name: str, names_list: List[str], threshold: int = 60, limit: int = 5) -> List[Tuple[str, float]]:
+    def fuzzy_match_entities(self, entity_name: str, names_list: List[str]) -> List[Tuple[str, float]]:
+        """ Fuzzy match extracted entity name against list of knowledge graph entity names. """
         matches = process.extract(
             entity_name,
             names_list,
             scorer=fuzz.WRatio,
-            score_cutoff=threshold,
-            limit=limit
+            score_cutoff=self.DEFAULT_FUZZY_THRESHOLD,
+            limit=self.DEFAULT_MAX_FUZZY_MATCHES_PER_ENTITY
         )
+        # Extract only name and score (ignore index from rapidfuzz)
         return [(match[0], match[1]) for match in matches]   
     
+    def link_entities(self, extracted_entities: List[str]) -> Dict[str, List[Tuple[str, float]]]:
+        """
+        Entity Linking: Map extracted entities to KG entities.
+        
+        Returns:
+            {
+                "Germany": [("Germany", 100.0), ("Germany's Team", 85.0)],
+                "Basketball": [("Basketball", 100.0)]
+            }
+        """
+        linked = {}
+        
+        for entity_name in extracted_entities:
+            matches = self.fuzzy_match_entities(
+                entity_name, 
+                self._all_entity_names
+            )
+            linked[entity_name] = matches
+        
+        return linked
+            
     def get_entity_info(self, entity_name: str) -> Dict:
-        """
-        Retrieve entity information from MongoDB.
-        Returns entity description if found.
-        """
+        """Retrieves entity information from MongoDB and returns description if entity found."""
         try:
             entity = self.entities_collection.find_one(
                 {"name": entity_name.strip().title()}
@@ -83,22 +93,27 @@ class KnowledgeGraphRetriever:
         except Exception as e:
             logger.error(f"Error retrieving entity {entity_name}: {e}")
             return None
+        
+    def _limit_matches(self, linking_results: Dict[str, List[Tuple[str, float]]]) -> List[Tuple[str, float]]:
+        """Limit matches for each entity to a certain number. Then remove duplicate entities that may come from other matches."""
+        unique_entities = set()
+        results = list()
+
+        for entity, matches in linking_results.items():
+            for kg_entity in matches[:self.DEFAULT_MAX_MATCHES_PER_ENTITY]:
+                if kg_entity[0] not in unique_entities:
+                    results.append(kg_entity)
+                    unique_entities.add(kg_entity[0])
+        
+        return results
     
-    def get_relationships_for_entity(self, entity_name: str, max_hops: int = 1) -> List[Dict]:
-        """
-        Get all relationships where the entity is subject or object.
+    def get_relationships_for_entity(self, entity_name: str) -> List[Dict]:
+        """Get all relationships where the entity is subject or object."""
+        max_hops: int = 2
         
-        Args:
-            entity_name: Name of the entity
-            max_hops: Number of relationship hops to traverse 
-        
-        Returns:
-            List of relationship dictionaries
-        """
         try:
             entity_title = entity_name.strip().title()
-            
-            # Find relationships where entity is subject or object
+
             relationships = list(self.relationships_collection.find({
                 "$or": [
                     {"subject": entity_title},
@@ -106,26 +121,26 @@ class KnowledgeGraphRetriever:
                 ]
             }))
             
-            # For 2-hop, get relationships of connected entities
-            if max_hops > 1 and relationships:
-                connected_entities = set()
-                for rel in relationships:
-                    connected_entities.add(rel["subject"])
-                    connected_entities.add(rel["object"])
+            # # For 2-hop, get relationships of connected entities
+            # if max_hops > 1 and relationships:
+            #     connected_entities = set()
+            #     for rel in relationships:
+            #         connected_entities.add(rel["subject"])
+            #         connected_entities.add(rel["object"])
                 
-                # Remove the original entity
-                connected_entities.discard(entity_title)
+            #     # Remove the original entity
+            #     connected_entities.discard(entity_title)
                 
-                # Get second-hop relationships
-                if connected_entities:
-                    second_hop = list(self.relationships_collection.find({
-                        "$or": [
-                            {"subject": {"$in": list(connected_entities)}},
-                            {"object": {"$in": list(connected_entities)}}
-                        ]
-                    }).limit(20))  # Limit to avoid too much data
+            #     # Get second-hop relationships
+            #     if connected_entities:
+            #         second_hop = list(self.relationships_collection.find({
+            #             "$or": [
+            #                 {"subject": {"$in": list(connected_entities)}},
+            #                 {"object": {"$in": list(connected_entities)}}
+            #             ]
+            #         }).limit(20))  # Limit to avoid too much data
                     
-                    relationships.extend(second_hop)
+            #         relationships.extend(second_hop)
             
             return relationships
             
@@ -133,101 +148,96 @@ class KnowledgeGraphRetriever:
             logger.error(f"Error retrieving relationships for {entity_name}: {e}")
             return []
     
-    def retrieve_kg_context(self,
-                            query: str,
-                            max_entities: int = 5,
-                            max_hops: int = 1,
-                            fuzzy_threshold: int = 70,       
-                            fuzzy_matches_per_entity: int = 5  
-                            ) -> str:
-        """
-        Main method to retrieve knowledge graph context for a query.
+    def _build_kg_context(self, matched_entities: List[Tuple[str, float]]) -> str:
+        """ Build formatted knowledge graph context from matched entities. """
+        kg_context_parts = []
+        processed_entities = set()
         
-        Args:
-            query: User's question
-            max_entities: Maximum number of entities to retrieve
-            max_hops: Number of relationship hops (1-2 recommended)
+        for entity_name, confidence_score in matched_entities:
+            # Skip if already processed 
+            if entity_name in processed_entities:
+                continue
+            
+            processed_entities.add(entity_name)
+            
+            # Get entity description
+            entity_info = self.get_entity_info(entity_name)
+            
+            # Log entity's info
+            if not entity_info:
+                logger.debug(f"No entity info found for '{entity_name}'")
+                continue
+            
+            kg_context_parts.append(
+                f"\n**Entity: {entity_info['name']}** (confidence: {confidence_score:.1f}%)"
+                f"\nDescription: {entity_info['description']}"
+            )
+            
+            # Get and format relationships
+            relationships = self.get_relationships_for_entity(entity_info['name'])
+            
+            if relationships:
+                kg_context_parts.append("\nRelationships:")
+                
+                # Deduplicate relationships
+                seen = set()
+                for rel in relationships:
+                    rel_tuple = (rel['subject'], rel['predicate'], rel['object'])
+                    if rel_tuple not in seen:
+                        seen.add(rel_tuple)
+                        kg_context_parts.append(
+                            f"  - {rel['subject']} {rel['predicate']} {rel['object']}"
+                        )
         
-        Returns:
-            Formatted string with entity descriptions and relationships
-        """
+        logger.info(f"Retrieved context for {len(kg_context_parts)} entities from knowledge graph")
+        return "\n".join(kg_context_parts)
+    
+    def retrieve_kg_context(self, query: str) -> str:
+        """Main method to retrieve knowledge graph context for a query."""
         
         # 1. Extract potential entities from user's query
         potential_entities = self.extract_potential_entities(query)
         
         # Log extracted entities
         if potential_entities:
-            logger.info(f"Found potential entities: {potential_entities}")
+            logger.info(f"Found potential entities in the users query: {potential_entities}")
         else:
             logger.info("No potential entities found in query")
-            return ""
+            return ""     
         
-        # Context helpers
-        kg_context_parts = []
-        entities_found = 0
-        processed_entities = set()  
-    
-        # 2. Retrieve entities, description and relationships
-        for entity_name in potential_entities[:max_entities]:
-            
-            # 2.1 Fuzzy match potential entity's name against KG entities
-            fuzzy_matches = self.fuzzy_match_entities(
-                entity_name, 
-                self._all_entity_names, 
-                threshold=fuzzy_threshold,
-                limit=fuzzy_matches_per_entity 
-            )
-            
-            if fuzzy_matches:
+        # 2. Link entities to Knowledge Graph
+        logger.info("Linking entities to knowledge graph...")
+        linking_results = self.link_entities(potential_entities)
+        
+        # Log linking results
+        total_matches = sum(len(matches) for matches in linking_results.values())
+        logger.info(f"Found {total_matches} total entity matches across {len(linking_results)} extracted entities")
+        
+        # Log details for each entity
+        for entity_name, matches in linking_results.items():
+            if matches:
                 logger.info(
-                    f"Fuzzy matches for '{entity_name}': "
-                    f"{[(name, f'{score:.1f}') for name, score in fuzzy_matches]}"
+                    f"Matches for '{entity_name}': "
+                    f"{[(name, f'{score:.1f}') for name, score in matches]}"
                 )
             else:
-                logger.info(f"No fuzzy matches found for '{entity_name}'")
-            
-            for matched_entity, confidence_score in fuzzy_matches:    
-                 # Skip if already processed 
-                if matched_entity in processed_entities:
-                    continue
-                
-                processed_entities.add(matched_entity)  
-            
-                # 2.2 Get entity description
-                entity_info = self.get_entity_info(matched_entity)
-                
-                if entity_info:
-                    entities_found += 1
-                    kg_context_parts.append(f"\n**Entity: {entity_info['name']}**"
-                                            f"(matched '{entity_name}' with {confidence_score:.1f}% confidence)"
-                                            )
-                    kg_context_parts.append(f"Description: {entity_info['description']}")
-                    
-                    # 2.3 Get relationships
-                    relationships = self.get_relationships_for_entity(entity_info['name'], max_hops)
-                    
-                    if relationships:
-                        kg_context_parts.append("Relationships:")
-                        # Deduplicate relationships
-                        seen = set()
-                        for rel in relationships:
-                            rel_tuple = (rel['subject'], rel['predicate'], rel['object'])
-                            if rel_tuple not in seen:
-                                seen.add(rel_tuple)
-                                kg_context_parts.append(
-                                    f"  - {rel['subject']} {rel['predicate']} {rel['object']}"
-                                )
+                logger.info(f"No matches found for '{entity_name}'") 
         
-        if entities_found == 0:
-            logger.info("No matching entities found in knowledge graph")
+        # 3. Limit total matches
+        all_matches = self._limit_matches(linking_results)
+        
+        # Log limited matches
+        logger.info(f"All Matches: {all_matches}")
+        
+        # 4. Retrieve entity's info
+        kg_context = self._build_kg_context(all_matches)
+    
+        if kg_context:
+            return kg_context
+        else:
             return ""
         
-        logger.info(f"Retrieved context for {entities_found} entities from knowledge graph")
-        return "\n".join(kg_context_parts)
-    
-    
     def get_kg_stats(self) -> Dict:
-        """Get statistics about the knowledge graph"""
         try:
             return {
                 "total_entities": self.entities_collection.count_documents({}),

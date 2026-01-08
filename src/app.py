@@ -3,24 +3,20 @@ from extract_text import *
 from llm import OllamaModel
 from vector_database import VectorDatabase
 from knowledge_graph_retriever import KnowledgeGraphRetriever
-# from deleete_later import KnowledgeGraphRetriever
+
 import logging
 from logger_config import setup_logging
 
+# Logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
+#Variables
 db = VectorDatabase()
 kg_retriever = KnowledgeGraphRetriever()
+llm = OllamaModel()
 
-def ask(prompt):
-    llm = OllamaModel()
-    return llm.inference(prompt)    
-
-def clear_database():
-    st.write("Database cleared.")
-    db.clear_database()
-
+#Methods 
 def show_sources():
     sources = db.get_sources()
     st.write("Sources in the database:")
@@ -58,6 +54,8 @@ def process_pdf(uploaded_files):
         chunks = extract_chunks_from_pdf(file)
         db.add_document_chunks(chunks, file.name)
     logger.info("Documents added successfully")
+
+### Main ### 
 
 # Title
 st.set_page_config(
@@ -108,22 +106,19 @@ with col1:
 
 with col2:
     if st.button("Clear Database"):
-        clear_database()
+        st.write("Database cleared.")
+        db.clear_database()
 
 # Knowledge Graph Settings (collapsible)
+### TODO: Remove or adjust this section and integrate it in the code ###
 with st.expander("⚙️ Knowledge Graph Settings"):
     use_kg = st.checkbox("Enable Knowledge Graph Enhancement", value=True, 
-                         help="Use knowledge graph to enhance answers with entity information")
-    max_hops = st.slider("Relationship Hops", min_value=1, max_value=2, value=1,
-                         help="Number of relationship connections to traverse (1=direct, 2=friends-of-friends)")
-    max_entities = st.slider("Max Entities", min_value=1, max_value=10, value=5,
-                             help="Maximum number of entities to retrieve from query")
-            
+                         help="Use knowledge graph to enhance answers with entity information")           
         
-# Chat Bot
+### Chat Bot ###
 st.title('Chat Bot 🤖')
 
-if st.button("🧹", help="Clear chat"):
+if st.button("Clear Chat 🧹", help="Clear chat"):
     st.session_state.messages = []
     st.rerun()
 
@@ -143,13 +138,14 @@ if user_input:
     st.chat_message("user").markdown(user_input)
     st.session_state.messages.append({"role": "user", "content": user_input})
     
-    # Response
+    # Response and RAG logic
     with st.spinner("KG Bot is thinking..."):
         # 1. Search vector DB for document chunks
         relevant_chunks = db.similarity_search(user_input, k=5)
+        
         logger.info(f"Found {len(relevant_chunks)} relevant chunks from vector DB")
         
-        # Extract page_content from chunks
+        # 1.1 Extract content and combine chunks
         if relevant_chunks:
             doc_context = "\n".join([chunk.page_content for chunk in relevant_chunks])
         else:
@@ -158,11 +154,7 @@ if user_input:
         # 2. Retrieve knowledge graph context (if enabled)
         kg_context = ""
         if use_kg:
-            kg_context = kg_retriever.retrieve_kg_context(
-                user_input, 
-                max_entities=max_entities, 
-                max_hops=max_hops
-            )
+            kg_context = kg_retriever.retrieve_kg_context(user_input)
         
         # 3. Combine contexts
         combined_context = ""
@@ -194,16 +186,20 @@ if user_input:
 
             Answer:"""
 
-        response_text = ask(enriched_prompt)
+        response_text = llm.inference(enriched_prompt)    
 
-    # Display response with indicator if KG was used
+    # Display an indicator if KG was used
     kg_indicator = " 🧠" if kg_context else ""
     response = f"{response_text}{kg_indicator}"
+    
+    #Display llm's message
     st.chat_message("assistant").markdown(response)
+    # Store the message in Streamlit session history
     st.session_state.messages.append({"role": "assistant", "content": response})
     
     # Optional: Show what was retrieved (for debugging/transparency)
     if kg_context:
+        st.session_state.last_kg_context = kg_context
         with st.expander("🔍 View Retrieved Knowledge"):
             st.markdown("**From Documents:**")
             st.text(doc_context[:500] + "..." if len(doc_context) > 500 else doc_context)

@@ -101,7 +101,7 @@ def extract_chunks_from_url(url):
         # Create chunks with proper URL as source
         chunks = text_splitter.create_documents([cleaned_text], metadatas=[{"source": url}])
         
-        # Ensure all chunks have the URL as source (redundant but safe)
+        # Ensure all chunks have the URL as source
         for chunk in chunks:
             chunk.metadata['source'] = url
             
