@@ -25,17 +25,15 @@ class VectorDatabase:
             # Get all documents with the specified source
             results = self.vector_store.get(
                 where={"source": source},
-                include=["ids"]
+                include=["documents"]
             )
-            
-            if results['ids']:
-                self.vector_store.delete(ids=results['ids'])
-                logger.info(f"Deleted {len(results['ids'])} chunks from source: {source}")
+            if results["documents"]:
+                self.vector_store.delete(where={"source": source})
+                logger.info(f"Deleted {len(results['documents'])} chunks from source: {source}")
                 return True
             else:
                 logger.info(f"No chunks found for source: {source}")
                 return False
-                
         except Exception as e:
             logger.error(f"Error deleting chunks by source: {e}")
             return False
@@ -84,7 +82,7 @@ class VectorDatabase:
             processed_chunks = []
             for i, chunk in enumerate(chunks):
                 # Create a copy of the chunk to avoid modifying the original
-                chunk_metadata = chunk.metadata if chunk.metadata else {}
+                chunk_metadata = dict(chunk.metadata) if chunk.metadata else {}
                 
                 # Add source if provided and not already in metadata
                 if source and "source" not in chunk_metadata:
@@ -118,7 +116,7 @@ class VectorDatabase:
             logger.error(f"Error clearing database: {e}")
             raise
     
-    def similarity_search(self, query: str, k: int = 5) -> List[str]:
+    def similarity_search(self, query: str, k: int = 5) -> List[Document]:
         try:
             results = self.vector_store.similarity_search(query, k=k)
             return results

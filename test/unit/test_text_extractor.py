@@ -3,7 +3,7 @@ import sys
 import os
 from langchain.schema import Document
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'src')))
 
 from text_extractor import (
     extract_chunks_from_pdf,
