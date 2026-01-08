@@ -7,7 +7,7 @@ class OllamaModel:
             request_timeout=300.0,
             temperature=0.7,
             additional_kwargs={
-                "num_ctx": 2048  # or 4096
+                "num_ctx": 2048
             }
         )
     
