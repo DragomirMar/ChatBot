@@ -1,5 +1,5 @@
 import streamlit as st
-from logger_config import setup_logging
+from configuration.logger_config import setup_logging
 import rag_service
 
 setup_logging()

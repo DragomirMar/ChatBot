@@ -2,7 +2,7 @@ import logging
 from typing import List, Tuple
 from text_extractor import *
 from llm import OllamaModel
-from vector_database import VectorDatabase
+from database.vector_database import VectorDatabase
 from knowledge_graph_retriever import KnowledgeGraphRetriever
 
 logger = logging.getLogger(__name__)

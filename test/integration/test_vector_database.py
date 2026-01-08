@@ -5,7 +5,7 @@ from langchain_core.documents import Document
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'src')))
 
-from vector_database import VectorDatabase
+from database.vector_database import VectorDatabase
 
 
 @pytest.fixture
