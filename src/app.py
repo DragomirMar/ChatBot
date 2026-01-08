@@ -1,5 +1,5 @@
 import streamlit as st
-from extract_text import *
+from text_extractor import *
 from llm import OllamaModel
 from vector_database import VectorDatabase
 from knowledge_graph_retriever import KnowledgeGraphRetriever

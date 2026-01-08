@@ -27,6 +27,7 @@ streamlit #web UI
 streamlit_agraph #Graph Framework
 plotly
 pymongo #Database communication framework
+pytest # Testing framework
 
 spacy # Natural Language Processing for NER (entity extraction from users query)
 # also download the spacy model: python -m spacy download en_core_web_sm
