@@ -4,7 +4,7 @@ from pathlib import Path
 # Add the src directory to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from knowledge_graph_retriever import KnowledgeGraphRetriever
+from knowledge_graph.knowledge_graph_retriever import KnowledgeGraphRetriever
 
 # Initialize
 kg = KnowledgeGraphRetriever()
