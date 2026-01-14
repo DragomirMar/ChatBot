@@ -11,18 +11,14 @@ db = VectorDatabase()
 kg_retriever = KnowledgeGraphRetriever()
 llm = OllamaModel()
 
-
 def get_sources() -> List[str]:
     return db.get_sources()
-
 
 def get_knowledge_graph_stats() -> dict:
     return kg_retriever.get_kg_stats()
 
-
 def clear_database():
     db.clear_database()
-
 
 def process_url(url) -> Tuple[bool, str]:
     """Process URL and add it to the vector database."""
@@ -41,7 +37,6 @@ def process_url(url) -> Tuple[bool, str]:
         logger.error(f"Error processing URL {url}: {str(e)}")
         return False, f"Error: {str(e)}"
 
-
 def process_pdfs(uploaded_files) -> Tuple[bool, str]:
     """Process multiple PDF files."""
     try:
@@ -55,7 +50,6 @@ def process_pdfs(uploaded_files) -> Tuple[bool, str]:
     except Exception as e:
         logger.error(f"Error processing PDFs: {str(e)}")
         return False, f"Error: {str(e)}"
-
 
 def _create_enriched_prompt(user_input: str, use_kg: bool) -> str:
     """Combines document and KG context to create enriched prompt."""
@@ -96,7 +90,6 @@ def _create_enriched_prompt(user_input: str, use_kg: bool) -> str:
 
             Answer:"""
     return enriched_prompt, kg_context, doc_context
-
 
 def generate_response(user_input: str, use_kg: bool) -> Tuple[str, str, str]:
     prompt, kg_context, doc_context = _create_enriched_prompt(user_input, use_kg)
