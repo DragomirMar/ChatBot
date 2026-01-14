@@ -2,46 +2,21 @@ from difflib import SequenceMatcher, get_close_matches
 from rapidfuzz import fuzz, process
 from typing import List, Tuple
 
-# Sample names for testing
 NAMES: List[str] = [  
-    "John Smith",
-    "Jon Smyth",
-    "Jane Smith",
-    "John Smithson",
-    "Bob Johnson",
-    "Robert Johnson",
-    "Alice Williams",
-    "Alicia Williams",
-    "Michael Brown",
-    "Mike Brown",
-    "Christopher Davis",
-    "Lithuania",
-    "Germany",
-    "Against Lithiuania",
-    "Germany vs Lithiuania",
-    "Lithuania National Team",
-    "Lithuania Basketball Team",
-    "Lithuanians Giants"
-    ]
-
+    "John Smith", "Jon Smyth", "Jane Smith", "John Smithson",
+    "Bob Johnson", "Robert Johnson", "Alice Williams", "Alicia Williams",
+    "Michael Brown", "Mike Brown", "Christopher Davis", "Lithuania",
+    "Germany", "Against Lithiuania", "Germany vs Lithiuania",
+    "Lithuania National Team", "Lithuania Basketball Team","Lithuanians Giants"]
 
 # Calculate similarity
 def simple_ratio(s1: str, s2: str) -> float:
     """Calculate similarity between two strings using SequenceMatcher."""
-    score = SequenceMatcher(None, s1, s2).ratio()
-    # print(score)  # 0.83    
+    score = SequenceMatcher(None, s1, s2).ratio() 
     return score
 
-
 def fuzzy_match(query: str, names_list: List[str], threshold: float = 0.8) -> List[str]:
-    """
-    Fuzzy match a query string against a list of names.
-    
-    Args:
-        query: The input string to match
-        names: List of names to match against
-        threshold: Similarity threshold (0.0 to 1.0)
-    """
+    """ Fuzzy match a query string against a list of names. """
     matches = []
     for name in names_list:
         score = simple_ratio(query, name)
@@ -51,33 +26,11 @@ def fuzzy_match(query: str, names_list: List[str], threshold: float = 0.8) -> Li
     return matches
 
 def fuzzy_match_with_get_close_matches(query: str, names_list: List[str], n: int = 5, cutoff: float = 0.6) -> List[str]:
-    """
-    Using difflib's get_close_matches - simpler but less control
-    
-    Args:
-        query: The search string
-        names_list: List of names to search through
-        n: Maximum number of matches to return
-        cutoff: Minimum similarity score (0-1)
-    
-    Returns:
-        List of matching names
-    """
+    """ Using difflib's get_close_matches - simpler but less control """
     return get_close_matches(query, names_list, n=n, cutoff=cutoff)
 
 def fuzzy_match_with_partial(query: str, names_list: List[str], threshold: float = 0.6) -> List[Tuple[str, float]]:
-    """
-    Fuzzy matching that also considers partial matches
-    Useful when query might be a substring or abbreviated form
-    
-    Args:
-        query: The search string
-        names_list: List of names to search through
-        threshold: Minimum similarity score (0-1)
-    
-    Returns:
-        List of tuples (name, score) sorted by score descending
-    """
+    """ Fuzzy matching that also considers partial matches. """
     matches = []
     query_lower = query.lower()
     
@@ -105,21 +58,8 @@ def fuzzy_match_with_partial(query: str, names_list: List[str], threshold: float
     matches.sort(key=lambda x: x[1], reverse=True)
     return matches
 
-
 def fuzzy_match_simple_ratio(query: str, names_list: List[str], threshold: int = 60, limit: int = 10) -> List[Tuple[str, float]]:
-    """
-    Simple ratio: Basic similarity comparison
-    Good for: General purpose matching
-    
-    Args:
-        query: The search string
-        names_list: List of names to search through
-        threshold: Minimum score (0-100) to include
-        limit: Maximum number of results
-    
-    Returns:
-        List of tuples (name, score)
-    """
+    """ Simple ratio: Basic similarity comparison. """
     matches = process.extract(
         query,
         names_list,
@@ -130,19 +70,7 @@ def fuzzy_match_simple_ratio(query: str, names_list: List[str], threshold: int =
     return [(match[0], match[1]) for match in matches]
 
 def fuzzy_match_partial_ratio(query: str, names_list: List[str], threshold: int = 60, limit: int = 10) -> List[Tuple[str, float]]:
-    """
-    Partial ratio: Matches substrings
-    Good for: When query might be shorter or partial
-    
-    Args:
-        query: The search string
-        names_list: List of names to search through
-        threshold: Minimum score (0-100) to include
-        limit: Maximum number of results
-    
-    Returns:
-        List of tuples (name, score)
-    """
+    """ Partial ratio: Matches substrings."""
     matches = process.extract(
         query,
         names_list,
@@ -152,21 +80,8 @@ def fuzzy_match_partial_ratio(query: str, names_list: List[str], threshold: int 
     )
     return [(match[0], match[1]) for match in matches]
 
-
 def fuzzy_match_weighted(query: str, names_list: List[str], threshold: int = 60, limit: int = 10) -> List[Tuple[str, float]]:
-    """
-    Weighted ratio: Automatically chooses best algorithm
-    Good for: General use, handles most cases well
-    
-    Args:
-        query: The search string
-        names_list: List of names to search through
-        threshold: Minimum score (0-100) to include
-        limit: Maximum number of results
-    
-    Returns:
-        List of tuples (name, score)
-    """
+    """ Weighted ratio: Automatically chooses best algorithm. """
     matches = process.extract(
         query,
         names_list,
@@ -177,9 +92,8 @@ def fuzzy_match_weighted(query: str, names_list: List[str], threshold: int = 60,
     return [(match[0], match[1]) for match in matches]
 
 
-
 if __name__ == "__main__":
-    # Test fuzzy matching
+    
     query = "lithuania"
     threshold = 0.7
     
@@ -189,13 +103,10 @@ if __name__ == "__main__":
     
     print("\n1. Basic Fuzzy Matching:")
     matched_names = fuzzy_match(query, NAMES, threshold)
-    
     print(f"Matches for '{query}' (threshold={threshold}):")
-    
     for name, score in matched_names:
         print(f" - {name} (score: {score:.2f})")
         
-    
     print("\n2. Fuzzy Matching with get_close_matches:")
     matched_names_gc = fuzzy_match_with_get_close_matches(query, NAMES, n=5, cutoff=threshold)
     print(f"Matches for '{query}' (cutoff={threshold}):")
@@ -208,11 +119,10 @@ if __name__ == "__main__":
         for name, score in matches:
             print(f"   {name:30} | Score: {score:.3f}")
             
-
     print("\n4. Rapiduzz Simple Ratio (direct character comparison):")
     matches = fuzzy_match_simple_ratio(query, NAMES, threshold=60)
     if matches:
-        for name, score in matches[:5]:  # Top 5
+        for name, score in matches[:5]:
             print(f"   {name:30} | Score: {score:.1f}")
             
     print("\n2. Partial Ratio (substring matching):")
@@ -220,7 +130,6 @@ if __name__ == "__main__":
     if matches:
         for name, score in matches[:5]:
             print(f"   {name:30} | Score: {score:.1f}")
-            
             
     print("\n5. Weighted Ratio (smart auto-selection) *** RECOMMENDED ***:")
     matches = fuzzy_match_weighted(query, NAMES, threshold=60)
