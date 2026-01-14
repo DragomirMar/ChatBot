@@ -1,62 +1,12 @@
 import streamlit as st
-from extract_text import *
-from llm import OllamaModel
-from vector_database import VectorDatabase
-import logging
-from logger_config import setup_logging
+from configuration.logger_config import setup_logging
+import rag_service
 
 setup_logging()
-logger = logging.getLogger(__name__)
 
-db = VectorDatabase()
 
-def ask(prompt):
-    llm = OllamaModel()
-    return llm.inference(prompt)    
-
-def clear_database():
-    st.write("Database cleared.")
-    db.clear_database()
-
-def show_sources():
-    sources = db.get_sources()
-    st.write("Sources in the database:")
-    for source in sources:
-        st.write(f"- {source}")
-
-def process_url(url):
-    st.write(f"Processing URL: {url}")
-    try:
-        chunks = extract_chunks_from_url(url)
-        
-        if not chunks:
-            st.error("Failed to extract content from URL. Please check if the URL is valid and accessible.")
-            return
-        
-        # Add chunks to database (no need to pass source again as it's already in metadata)
-        db.add_document_chunks(chunks)
-        
-        st.success(f"Successfully added {len(chunks)} chunks from URL to database")
-        logger.info(f"URL content added successfully: {url}")
-        
-    except Exception as e:
-        st.error(f"Error processing URL: {str(e)}")
-        logger.error(f"Error processing URL {url}: {str(e)}")
-
-def process_pdf(uploaded_files):
-    st.write("Saving files to DB...")
-    
-    for file in uploaded_files:
-        chunks = extract_chunks_from_pdf(file)
-        db.add_document_chunks(chunks, file.name)
-    logger.info("Documents added successfully")
-
-# Title
-st.set_page_config(
-    page_title="RAG ChatBot",
-    layout="wide")
-
-st.title('Upload Documents to RAG ChatBot')
+st.set_page_config(page_title="RAG ChatBot with Knowledge Graph", layout="wide")
+st.title('Upload Documents to RAG ChatBot with Knowledge Graph 🧠')
 
 col1, col2 = st.columns(2)
 
@@ -72,88 +22,90 @@ with col1:
     
     if st.button("Confirm Files"):
         if uploaded_files:
-            process_pdf(uploaded_files)
+            st.write("Processing document(s)...")
+            success, message = rag_service.process_pdfs(uploaded_files)
+            if success:
+                st.success(message)
+            else:
+                st.error(message)
         else:
             st.warning("Please select at least one PDF file.")
 
 # URL Upload
 with col2:
     st.subheader("Add URLs")
-    input_url = st.text_input(
-        "Enter URL", 
-        placeholder="https://example.com/article"
-    )
+    input_url = st.text_input("Enter URL", placeholder="https://example.com/article")
     
     if st.button("Confirm URL"):
         if input_url.strip():
-            process_url(input_url.strip())
+            st.write("Processing url(s)...")
+            success, message = rag_service.process_url(input_url.strip())
+            if success:
+                st.success(message)
+            else:
+                st.error(message)
         else:
             st.warning("Please enter a valid URL.")
 
 st.markdown("---")
-# Buttons for database operations
+
+# Database Operations
 col1, col2 = st.columns([1,1]) 
 with col1:
     if st.button("Show Sources"):
-        show_sources()
+        # Sources
+        sources = rag_service.get_sources()
+        st.write("Sources in the database:")
+        for source in sources:
+            st.write(f"- {source}")
+        
+        # KG stats
+        kg_stats = rag_service.get_knowledge_graph_stats()
+        st.write("\nKnowledge Graph Statistics:")
+        st.write(f"- Entities: {kg_stats.get('total_entities', 0)}")
+        st.write(f"- Relationships: {kg_stats.get('total_relationships', 0)}")
 
 with col2:
     if st.button("Clear Database"):
-        clear_database()
-            
+        rag_service.clear_database()
+        st.write("Database cleared.")
+
+# Knowledge Graph Settings (collapsible)
+with st.expander("⚙️ Knowledge Graph Settings"):
+    use_kg = st.checkbox("Enable Knowledge Graph Enhancement", value=True, 
+                         help="Use knowledge graph to enhance answers with entity information")           
         
-# Chat Bot
-st.title('Chat Bot 🤖')
-
-if st.button("🧹", help="Clear chat"):
-    st.session_state.messages = []
-    st.rerun()
-
+# Chatbot
+st.title('Chat Bot')
 if "messages" not in st.session_state:
     st.session_state.messages = []
+    
+if st.button("Clear Chat", help="Clear chat"):
+    st.session_state.messages = []
+    st.rerun()
 
 # Display chat history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# Input field (pinned to bottom automatically)
+# Input field, pinned to bottom
 user_input = st.chat_input("Type your message...")
-
 if user_input:
     # Show user's message
     st.chat_message("user").markdown(user_input)
     st.session_state.messages.append({"role": "user", "content": user_input})
     
-    # Response
+    # Response 
     with st.spinner("KG Bot is thinking..."):
-        # Search vector DB
-        relevant_chunks = db.similarity_search(user_input, k=5)
-        print(f"Relevant chunks: {relevant_chunks}")
-        logger.info(f"Found {len(relevant_chunks)} relevant chunks")
+        response, kg_context, doc_context = rag_service.generate_response(user_input, use_kg)
         
-        # Extract page_content from each chunk and join them
-        if relevant_chunks:
-            context = "\n".join([chunk.page_content for chunk in relevant_chunks])
-        else:
-            context = "No relevant context found."
-
-        # Add context to user query
-        enriched_prompt = f"""
-            You are a helpful assistant. Use the following context to help answer the user's question.
-            Only use the context if it is relevant.
-            Summarize your answer in no more than 3 sentences.
-
-            Context:
-            {context}
-
-            User Question:
-            {user_input}
-
-            Answer:"""
-
-        response_text = ask(enriched_prompt)
-
-    response = f"{response_text}"
-    st.chat_message("assistant").markdown(response)
-    st.session_state.messages.append({"role": "assistant", "content": response})
+        st.chat_message("assistant").markdown(response)
+        st.session_state.messages.append({"role": "assistant", "content": response})
+        
+        if kg_context:
+            with st.expander("🔍 View Retrieved Knowledge"):
+                st.markdown("**From Documents:**")
+                st.text(doc_context[:500] + "..." if len(doc_context) > 500 else doc_context)
+                st.markdown("**From Knowledge Graph:**")
+                st.markdown(kg_context)
