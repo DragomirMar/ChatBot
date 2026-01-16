@@ -5,8 +5,8 @@ import rag_service
 setup_logging()
 
 
-st.set_page_config(page_title="RAG ChatBot with Knowledge Graph", layout="wide")
-st.title('Upload Documents to RAG ChatBot with Knowledge Graph 🧠')
+st.set_page_config(page_title="ChatBot", layout="wide")
+st.title('Upload Documents')
 
 col1, col2 = st.columns(2)
 
@@ -70,10 +70,9 @@ with col2:
         rag_service.clear_database()
         st.write("Database cleared.")
 
-# Knowledge Graph Settings (collapsible)
-with st.expander("⚙️ Knowledge Graph Settings"):
-    use_kg = st.checkbox("Enable Knowledge Graph Enhancement", value=True, 
-                         help="Use knowledge graph to enhance answers with entity information")           
+# A boolean variable that indicates the use of the Knowledge Graph. (Always true)
+# It is no longer available for users to enable or disable, but has been left here for testing purposes and comparison of results.
+use_kg = True          
         
 # Chatbot
 st.title('Chat Bot')
