@@ -28,18 +28,26 @@ Before getting started, ensure you have the following installed on your machine:
 Follow the steps below to set up the project locally:
 
 ### 1. Install Ollama
-Download and install [Ollama](https://ollama.com), which is required to run models locally.
+Download and install Ollama, which is required to run models locally.
 
-### 2. Pull LLaMA 3.1 (or another model)
+- For **Windows** and **Mac** use the link: https://ollama.com/download
+
+- For **Ubuntu** use the command:
+```curl -fsSL https://ollama.com/install.sh | sh ```
+
+#### Pull LLaMA 3.1
 Once Ollama is installed, pull the LLaMA 3.1 model (or another model you prefer):
 ```bash
 ollama pull llama3.1
 ```
 
-### 3. Install mongodb
-Download and install MongoDB from the website https://www.mongodb.com/try/download/community.
+### 2. Install MongoDB
+#### For Windows & macOS:
+Download and install MongoDB:
+- **Windows**: https://www.mongodb.com/docs/v7.0/tutorial/install-mongodb-on-windows/
+- **macOS**: https://www.mongodb.com/docs/v7.0/tutorial/install-mongodb-on-os-x/
 
-Create MongoDB Data Directory (first time only):
+After installation, open a terminal and create MongoDB Data Directory (first time only):
 ```bash
 mkdir -p ~/data/db
 ```
@@ -51,13 +59,54 @@ mongod --dbpath ~/data/db
 
 Keep this terminal window open while using the application.
 
-### 4. Clone this repo
+---
+
+### For Ubuntu:
+
+**Step 1: Install prerequisites**
+```bash
+sudo apt-get install gnupg curl
+```
+
+**Step 2: Import MongoDB public GPG key**
+```bash
+curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
+   sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg \
+   --dearmor
+```
+
+**Step 3: Create MongoDB repository list file**
+```bash
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+```
+
+**Step 4: Reload package database**
+```bash
+sudo apt-get update
+```
+
+**Step 5: Install MongoDB Community Server**
+``` bash
+sudo apt install -y mongodb-org
+```
+
+**Step 6: Start MongoDB service**
+``` bash 
+sudo systemctl start mongod
+```
+
+**Step 7: Verify MongoDB is running**
+``` bash 
+sudo systemctl status mongod
+```
+
+### 3. Clone this repo
 ```bash
 git clone https://github.com/DragomirMar/ChatBot.git
 cd ChatBot
 ```
 
-### 5. Create Virtual Environment
+### 4. Create Virtual Environment
 ```bash
 ### Navigate to the project folder
 cd Knowledge_Graph
@@ -70,7 +119,7 @@ source venv/bin/activate
 ```
 **Note:** On many Linux systems, `python` may still point to Python 2 so use  `python3` as a command.
 
-### 6. Install Required Libraries
+### 5. Install Required Libraries
 ```bash
 pip install -r requirements.txt 
 ```
@@ -80,7 +129,7 @@ pip install -r requirements.txt
 unalias pip
 ```
 
-### 7. Configure Environment Variables
+### 6. Configure Environment Variables
 
 The application uses environment variables to manage database configuration and separate test/production environments.
 
@@ -94,18 +143,31 @@ Start Ollama either through the interface or through the terminal:
 ```bash
 ollama serve
 ```
-This starts the Ollama server and lets you reach the model(s).
 
 ### 2. Ensure MongoDB is Running
+**Windows, macOS**
+
 Make sure MongoDB is still running in another terminal:
 ```bash
 mongod --dbpath ~/data/db
 ```
 
+### Ubuntu
+
+Check if MongoDB is running:
+``` bash
+sudo systemctl status mongod
+```
+
+Start if not running:
+``` bash
+sudo systemctl start mongod
+```
+
 ### 3. Activate Virtual Environment
+**macOS/Linux**
 If not already activated:
 ```bash
-# On macOS/Linux:
 source venv/bin/activate
 ```
 
@@ -114,7 +176,7 @@ Navigate to the source folder (cd src) and run:
 ```bash
 streamlit run app.py
 ```
-The application will open in your browser at `http://localhost:8501`
+The application will open in your browser at `http://localhost:8502`
 
 
 # Testing
