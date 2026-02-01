@@ -109,7 +109,7 @@ cd ChatBot
 ### 4. Create Virtual Environment
 ```bash
 ### Navigate to the project folder
-cd Knowledge_Graph
+cd ChatBot
 
 ### Create a virtual environment
 python -m venv venv
