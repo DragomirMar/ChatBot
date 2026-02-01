@@ -123,6 +123,10 @@ source venv/bin/activate
 ```bash
 pip install -r requirements.txt 
 ```
+Also install the English NLP model used by spaCy:
+```bash
+python3 -m spacy download en_core_web_sm
+```
 
 **Note:** If pip is still using the global environment, run:
 ```bash
