@@ -109,7 +109,7 @@ cd ChatBot
 ### 4. Create Virtual Environment
 ```bash
 ### Navigate to the project folder
-cd Knowledge_Graph
+cd ChatBot
 
 ### Create a virtual environment
 python -m venv venv
@@ -122,6 +122,10 @@ source venv/bin/activate
 ### 5. Install Required Libraries
 ```bash
 pip install -r requirements.txt 
+```
+Also install the English NLP model used by spaCy:
+```bash
+python3 -m spacy download en_core_web_sm
 ```
 
 **Note:** If pip is still using the global environment, run:
