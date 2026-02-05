@@ -9,7 +9,7 @@ The chatbot allows users to upload documents or provide URLs and combines vector
 
 It was built with:
 - Python
-- [Ollama](https://ollama.com) (Model: llama3.1:8B)
+- [Ollama](https://ollama.com) (Models: llama3.1:8B, nomic_embed_text)
 - [Streamlit](https://streamlit.io/)
 - [MongoDB](https://www.mongodb.com/)
 - [Chroma](https://www.trychroma.com/)
@@ -36,10 +36,17 @@ Download and install Ollama, which is required to run models locally.
 ```curl -fsSL https://ollama.com/install.sh | sh ```
 
 #### Pull LLaMA 3.1
-Once Ollama is installed, pull the LLaMA 3.1 model (or another model you prefer):
+Once Ollama is installed, pull the LLaMA 3.1 model (or another llm model you prefer):
 ```bash
 ollama pull llama3.1
 ```
+
+#### Pull nomic_embed_text
+Also a text embedding model is needed, so pull nomic-embed-text:
+```bash
+ollama pull nomic-embed-text
+```
+
 
 ### 2. Install MongoDB
 #### For Windows & macOS:
@@ -135,11 +142,18 @@ unalias pip
 
 ### 6. Configure Environment Variables
 
-The application uses environment variables to manage database configuration and separate test/production environments.
+The application uses environment variables to manage database configuration. So copy the example environment file (.env.example) to a new one called .env (or create it yourself) and edit it with your database configuration
 
-## Configuration
+```bash
+# Create production environment file
+cp .env.example .env
 
-At the moment, database connections are defined directly in the source code. To change them, open knowledge_graph_retriever.py and change database connection accordingly.
+```
+Default configuration:
+```bash
+MONGODB_URI=mongodb://localhost:27017/
+MONGODB_DATABASE=knowledge_graph
+```
 
 # Run the application
 ### 1. Start Ollama
