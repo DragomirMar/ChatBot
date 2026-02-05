@@ -62,8 +62,8 @@ with col1:
         # KG stats
         kg_stats = rag_service.get_knowledge_graph_stats()
         st.write("\nKnowledge Graph Statistics:")
-        st.write(f"- Entities: {kg_stats.get('total_entities', 0)}")
-        st.write(f"- Relationships: {kg_stats.get('total_relationships', 0)}")
+        st.write(f"- Entities: {kg_stats.get('entities', 0)}")
+        st.write(f"- Relationships: {kg_stats.get('relationships', 0)}")
 
 with col2:
     if st.button("Clear Database"):

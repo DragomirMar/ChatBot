@@ -4,8 +4,17 @@ import logging
 from entity_extractor import extract_entities
 from rapidfuzz import process, fuzz
 from knowledge_graph.relationship_strategy import RelationshipStrategy
+import os
+from dotenv import load_dotenv
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Get the project root directory to load .env
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+env_file = PROJECT_ROOT / '.env'
+load_dotenv(env_file)
 
 class KnowledgeGraphRetriever:
     """ Retrieves relevant entities and relationships from MongoDB knowledge graph. """
@@ -14,13 +23,24 @@ class KnowledgeGraphRetriever:
     MAX_FUZZY_MATCHES_PER_ENTITY = 2    
     MAX_MATCHES_PER_ENTITY = 3
 
-    def __init__(self, mongo_uri: str = "mongodb://localhost:27017/"):
+    def __init__(self):
+
+        mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
+        db_name = os.getenv("MONGODB_DATABASE", "knowledge_graph")
+        
         self.client = MongoClient(mongo_uri)
-        self.db = self.client["knowledge_graph"]
+        self.db = self.client[db_name]
         self.entities_collection = self.db["entities"]
         self.relationships_collection = self.db["relationships"]
         
         self.relationship_strategy = RelationshipStrategy(relationships_collection=self.relationships_collection)
+
+        try:
+            self.client.admin.command("ping")
+            logger.info(f"Connected to MongoDB: {db_name}")
+        except Exception as e:
+            logger.info(f"Failed to connect to MongoDB: {e}")
+            raise
 
         self._create_indexes()
         self._all_entity_names = self._load_all_entity_names()
